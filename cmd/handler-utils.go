@@ -248,6 +248,8 @@ func extractReqParams(r *http.Request) map[string]string {
 	if _, ok := r.Header[xhttp.MinIOSourceReplicationRequest]; ok {
 		m[xhttp.MinIOSourceReplicationRequest] = ""
 	}
+	// Specific Hook Pydio
+	applyHooksExtractReqParams(r, m)
 	return m
 }
 
