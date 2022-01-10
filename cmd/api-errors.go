@@ -1981,6 +1981,9 @@ func toAPIErrorCode(ctx context.Context, err error) (apiErr APIErrorCode) {
 		apiErr = ErrReplicationSourceNotVersionedError
 	case BucketQuotaExceeded:
 		apiErr = ErrAdminBucketQuotaExceeded
+	case PydioQuotaExceeded:
+		// Pydio Quota
+		apiErr = ErrPydioQuotaExceeded
 	case *event.ErrInvalidEventName:
 		apiErr = ErrEventNotification
 	case *event.ErrInvalidARN:
