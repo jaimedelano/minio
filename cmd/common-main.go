@@ -81,11 +81,18 @@ func init() {
 		},
 	})
 
-	globalTransitionState = newTransitionState()
+	//globalTransitionState = newTransitionState()
 
 	console.SetColor("Debug", color.New())
 
 	gob.Register(StorageErr(""))
+}
+
+func getGlobalTransitionState() *transitionState {
+	if globalTransitionState == nil {
+		globalTransitionState = newTransitionState()
+	}
+	return globalTransitionState
 }
 
 func verifyObjectLayerFeatures(name string, objAPI ObjectLayer) {

@@ -1007,7 +1007,7 @@ func applyTransitionAction(ctx context.Context, action lifecycle.Action, objLaye
 			return false
 		}
 	}
-	globalTransitionState.queueTransitionTask(obj)
+	getGlobalTransitionState().queueTransitionTask(obj)
 	return true
 
 }

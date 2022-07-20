@@ -159,13 +159,11 @@ func (t *transitionState) addWorker(ctx context.Context, objectAPI ObjectLayer) 
 }
 
 func initBackgroundTransition(ctx context.Context, objectAPI ObjectLayer) {
-	if globalTransitionState == nil {
-		return
-	}
 
+	ts := getGlobalTransitionState()
 	// Start with globalTransitionConcurrent.
 	for i := 0; i < globalTransitionConcurrent; i++ {
-		globalTransitionState.addWorker(ctx, objectAPI)
+		ts.addWorker(ctx, objectAPI)
 	}
 }
 
