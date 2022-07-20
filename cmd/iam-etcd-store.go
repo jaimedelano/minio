@@ -33,8 +33,8 @@ import (
 	"github.com/minio/minio/pkg/auth"
 	iampolicy "github.com/minio/minio/pkg/iam/policy"
 	"github.com/minio/minio/pkg/madmin"
-	etcd "go.etcd.io/etcd/clientv3"
-	"go.etcd.io/etcd/mvcc/mvccpb"
+	"go.etcd.io/etcd/api/v3/mvccpb"
+	etcd "go.etcd.io/etcd/client/v3"
 )
 
 var defaultContextTimeout = 30 * time.Second
@@ -572,7 +572,7 @@ func (ies *IAMEtcdStore) watch(ctx context.Context, sys *IAMSys) {
 // sys.RLock is held by caller.
 func (ies *IAMEtcdStore) reloadFromEvent(sys *IAMSys, event *etcd.Event) {
 	eventCreate := event.IsModify() || event.IsCreate()
-	eventDelete := event.Type == etcd.EventTypeDelete
+	eventDelete := false //event.Type == etcd.EventTypeDelete
 	usersPrefix := strings.HasPrefix(string(event.Kv.Key), iamConfigUsersPrefix)
 	groupsPrefix := strings.HasPrefix(string(event.Kv.Key), iamConfigGroupsPrefix)
 	stsPrefix := strings.HasPrefix(string(event.Kv.Key), iamConfigSTSPrefix)
