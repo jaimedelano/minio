@@ -904,10 +904,13 @@ func (api objectAPIHandlers) CopyObjectHandler(w http.ResponseWriter, r *http.Re
 	// PYDIO : WE FORCE UNESCAPING OR ?versionId is NOT properly detected here
 	cpSrcPath, _ := url.QueryUnescape(r.Header.Get(xhttp.AmzCopySource))
 	var vid string
-	if u, err := url.Parse(cpSrcPath); err == nil {
+	// Re-encode "#" in filename or it will cut URL at the wrong location
+	if u, err := url.Parse(strings.ReplaceAll(cpSrcPath, "#", "%23")); err == nil {
 		vid = strings.TrimSpace(u.Query().Get(xhttp.VersionID))
 		// Note that url.Parse does the unescaping
-		cpSrcPath = u.Path
+		if vid != "" && vid != nullVersionID {
+			cpSrcPath = u.Path
+		}
 	}
 
 	srcBucket, srcObject := path2BucketObject(cpSrcPath)
