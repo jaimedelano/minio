@@ -24,14 +24,12 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"net"
 	"net/http"
 	"path"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -39,7 +37,6 @@ import (
 	"github.com/klauspost/readahead"
 	"github.com/minio/minio-go/v7/pkg/s3utils"
 	"github.com/minio/minio/cmd/config/compress"
-	"github.com/minio/minio/cmd/config/dns"
 	"github.com/minio/minio/cmd/config/storageclass"
 	"github.com/minio/minio/cmd/crypto"
 	xhttp "github.com/minio/minio/cmd/http"
@@ -358,6 +355,7 @@ func isMinioReservedBucket(bucketName string) bool {
 }
 
 // returns a slice of hosts by reading a slice of DNS records
+/*
 func getHostsSlice(records []dns.SrvRecord) []string {
 	hosts := make([]string, len(records))
 	for i, r := range records {
@@ -366,7 +364,10 @@ func getHostsSlice(records []dns.SrvRecord) []string {
 	return hosts
 }
 
+*/
+
 // returns an online host (and corresponding port) from a slice of DNS records
+/*
 func getHostFromSrv(records []dns.SrvRecord) (host string) {
 	hosts := getHostsSlice(records)
 	rng := rand.New(rand.NewSource(time.Now().UTC().UnixNano()))
@@ -388,6 +389,8 @@ func getHostFromSrv(records []dns.SrvRecord) (host string) {
 
 	return host
 }
+
+*/
 
 // IsCompressed returns true if the object is marked as compressed.
 func (o ObjectInfo) IsCompressed() bool {
@@ -820,7 +823,7 @@ func (g *GetObjectReader) Read(p []byte) (n int, err error) {
 	return g.pReader.Read(p)
 }
 
-//SealMD5CurrFn seals md5sum with object encryption key and returns sealed
+// SealMD5CurrFn seals md5sum with object encryption key and returns sealed
 // md5sum
 type SealMD5CurrFn func([]byte) []byte
 

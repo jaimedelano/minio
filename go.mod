@@ -5,9 +5,6 @@ go 1.16
 require (
 	cloud.google.com/go/storage v1.22.1
 	git.apache.org/thrift.git v0.13.0
-	github.com/Azure/azure-pipeline-go v0.2.2
-	github.com/Azure/azure-storage-blob-go v0.10.0
-	github.com/Azure/go-autorest/autorest/adal v0.9.1 // indirect
 	github.com/Shopify/sarama v1.27.2
 	github.com/VividCortex/ewma v1.1.1
 	github.com/alecthomas/participle v0.2.1
@@ -16,7 +13,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.1.1
 	github.com/cheggaaa/pb v1.0.29
 	github.com/colinmarc/hdfs/v2 v2.2.0
-	github.com/coredns/coredns v1.4.0
 	github.com/dchest/siphash v1.2.1
 	github.com/djherbis/atime v1.0.0
 	github.com/dswarbrick/smart v0.0.0-20190505152634-909a45200d6d
@@ -41,7 +37,6 @@ require (
 	github.com/klauspost/reedsolomon v1.9.11
 	github.com/lib/pq v1.9.0
 	github.com/mattn/go-colorable v0.1.8
-	github.com/mattn/go-ieproxy v0.0.1 // indirect
 	github.com/mattn/go-isatty v0.0.12
 	github.com/miekg/dns v1.1.35
 	github.com/minio/cli v1.22.0

@@ -35,12 +35,9 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/klauspost/compress/zip"
-	"github.com/minio/minio-go/v7"
-	miniogo "github.com/minio/minio-go/v7"
 	miniogopolicy "github.com/minio/minio-go/v7/pkg/policy"
 	"github.com/minio/minio-go/v7/pkg/s3utils"
 
-	"github.com/minio/minio/cmd/config/dns"
 	"github.com/minio/minio/cmd/config/identity/openid"
 	"github.com/minio/minio/cmd/crypto"
 	xhttp "github.com/minio/minio/cmd/http"
@@ -198,26 +195,29 @@ func (web *webAPIHandlers) MakeBucket(r *http.Request, args *MakeBucketArgs, rep
 		LockEnabled: false,
 	}
 
-	if globalDNSConfig != nil {
-		if _, err := globalDNSConfig.Get(args.BucketName); err != nil {
-			if err == dns.ErrNoEntriesFound || err == dns.ErrNotImplemented {
-				// Proceed to creating a bucket.
-				if err = objectAPI.MakeBucketWithLocation(ctx, args.BucketName, opts); err != nil {
-					return toJSONError(ctx, err)
-				}
+	/*
+		if globalDNSConfig != nil {
+			if _, err := globalDNSConfig.Get(args.BucketName); err != nil {
+				if err == dns.ErrNoEntriesFound || err == dns.ErrNotImplemented {
+					// Proceed to creating a bucket.
+					if err = objectAPI.MakeBucketWithLocation(ctx, args.BucketName, opts); err != nil {
+						return toJSONError(ctx, err)
+					}
 
-				if err = globalDNSConfig.Put(args.BucketName); err != nil {
-					objectAPI.DeleteBucket(ctx, args.BucketName, false)
-					return toJSONError(ctx, err)
-				}
+					if err = globalDNSConfig.Put(args.BucketName); err != nil {
+						objectAPI.DeleteBucket(ctx, args.BucketName, false)
+						return toJSONError(ctx, err)
+					}
 
-				reply.UIVersion = Version
-				return nil
+					reply.UIVersion = Version
+					return nil
+				}
+				return toJSONError(ctx, err)
 			}
-			return toJSONError(ctx, err)
+			return toJSONError(ctx, errBucketAlreadyExists)
 		}
-		return toJSONError(ctx, errBucketAlreadyExists)
-	}
+
+	*/
 
 	if err := objectAPI.MakeBucketWithLocation(ctx, args.BucketName, opts); err != nil {
 		return toJSONError(ctx, err, args.BucketName)
@@ -275,25 +275,28 @@ func (web *webAPIHandlers) DeleteBucket(r *http.Request, args *RemoveBucketArgs,
 
 	reply.UIVersion = Version
 
-	if isRemoteCallRequired(ctx, args.BucketName, objectAPI) {
-		sr, err := globalDNSConfig.Get(args.BucketName)
-		if err != nil {
-			if err == dns.ErrNoEntriesFound {
-				return toJSONError(ctx, BucketNotFound{
-					Bucket: args.BucketName,
-				}, args.BucketName)
+	/*
+		if isRemoteCallRequired(ctx, args.BucketName, objectAPI) {
+			sr, err := globalDNSConfig.Get(args.BucketName)
+			if err != nil {
+				if err == dns.ErrNoEntriesFound {
+					return toJSONError(ctx, BucketNotFound{
+						Bucket: args.BucketName,
+					}, args.BucketName)
+				}
+				return toJSONError(ctx, err, args.BucketName)
 			}
-			return toJSONError(ctx, err, args.BucketName)
+			core, err := getRemoteInstanceClient(r, getHostFromSrv(sr))
+			if err != nil {
+				return toJSONError(ctx, err, args.BucketName)
+			}
+			if err = core.RemoveBucket(ctx, args.BucketName); err != nil {
+				return toJSONError(ctx, err, args.BucketName)
+			}
+			return nil
 		}
-		core, err := getRemoteInstanceClient(r, getHostFromSrv(sr))
-		if err != nil {
-			return toJSONError(ctx, err, args.BucketName)
-		}
-		if err = core.RemoveBucket(ctx, args.BucketName); err != nil {
-			return toJSONError(ctx, err, args.BucketName)
-		}
-		return nil
-	}
+
+	*/
 
 	deleteBucket := objectAPI.DeleteBucket
 
@@ -303,12 +306,14 @@ func (web *webAPIHandlers) DeleteBucket(r *http.Request, args *RemoveBucketArgs,
 
 	globalNotificationSys.DeleteBucketMetadata(ctx, args.BucketName)
 
-	if globalDNSConfig != nil {
-		if err := globalDNSConfig.Delete(args.BucketName); err != nil {
-			logger.LogIf(ctx, fmt.Errorf("Unable to delete bucket DNS entry %w, please delete it manually", err))
-			return toJSONError(ctx, err)
+	/*
+		if globalDNSConfig != nil {
+			if err := globalDNSConfig.Delete(args.BucketName); err != nil {
+				logger.LogIf(ctx, fmt.Errorf("Unable to delete bucket DNS entry %w, please delete it manually", err))
+				return toJSONError(ctx, err)
+			}
 		}
-	}
+	*/
 
 	reqParams := extractReqParams(r)
 	reqParams["accessKey"] = claims.AccessKey
@@ -359,51 +364,52 @@ func (web *webAPIHandlers) ListBuckets(r *http.Request, args *WebGenericArgs, re
 	r.Header.Set("delimiter", SlashSeparator)
 
 	// If etcd, dns federation configured list buckets from etcd.
-	if globalDNSConfig != nil && globalBucketFederation {
-		dnsBuckets, err := globalDNSConfig.List()
-		if err != nil && !IsErrIgnored(err,
-			dns.ErrNoEntriesFound,
-			dns.ErrDomainMissing) {
-			return toJSONError(ctx, err)
-		}
-		for _, dnsRecords := range dnsBuckets {
-			if globalIAMSys.IsAllowed(iampolicy.Args{
-				AccountName:     claims.AccessKey,
-				Action:          iampolicy.ListBucketAction,
-				BucketName:      dnsRecords[0].Key,
-				ConditionValues: getConditionValues(r, "", claims.AccessKey, claims.Map()),
-				IsOwner:         owner,
-				ObjectName:      "",
-				Claims:          claims.Map(),
-			}) {
-				reply.Buckets = append(reply.Buckets, WebBucketInfo{
-					Name:         dnsRecords[0].Key,
-					CreationDate: dnsRecords[0].CreationDate,
-				})
+	/*
+		if globalDNSConfig != nil && globalBucketFederation {
+			dnsBuckets, err := globalDNSConfig.List()
+			if err != nil && !IsErrIgnored(err,
+				dns.ErrNoEntriesFound,
+				dns.ErrDomainMissing) {
+				return toJSONError(ctx, err)
 			}
-		}
-	} else {
-		buckets, err := listBuckets(ctx)
-		if err != nil {
-			return toJSONError(ctx, err)
-		}
-		for _, bucket := range buckets {
-			if globalIAMSys.IsAllowed(iampolicy.Args{
-				AccountName:     claims.AccessKey,
-				Action:          iampolicy.ListBucketAction,
-				BucketName:      bucket.Name,
-				ConditionValues: getConditionValues(r, "", claims.AccessKey, claims.Map()),
-				IsOwner:         owner,
-				ObjectName:      "",
-				Claims:          claims.Map(),
-			}) {
-				reply.Buckets = append(reply.Buckets, WebBucketInfo{
-					Name:         bucket.Name,
-					CreationDate: bucket.Created,
-				})
+			for _, dnsRecords := range dnsBuckets {
+				if globalIAMSys.IsAllowed(iampolicy.Args{
+					AccountName:     claims.AccessKey,
+					Action:          iampolicy.ListBucketAction,
+					BucketName:      dnsRecords[0].Key,
+					ConditionValues: getConditionValues(r, "", claims.AccessKey, claims.Map()),
+					IsOwner:         owner,
+					ObjectName:      "",
+					Claims:          claims.Map(),
+				}) {
+					reply.Buckets = append(reply.Buckets, WebBucketInfo{
+						Name:         dnsRecords[0].Key,
+						CreationDate: dnsRecords[0].CreationDate,
+					})
+				}
 			}
+		} else {*/
+	buckets, err := listBuckets(ctx)
+	if err != nil {
+		return toJSONError(ctx, err)
+	}
+	for _, bucket := range buckets {
+		if globalIAMSys.IsAllowed(iampolicy.Args{
+			AccountName:     claims.AccessKey,
+			Action:          iampolicy.ListBucketAction,
+			BucketName:      bucket.Name,
+			ConditionValues: getConditionValues(r, "", claims.AccessKey, claims.Map()),
+			IsOwner:         owner,
+			ObjectName:      "",
+			Claims:          claims.Map(),
+		}) {
+			reply.Buckets = append(reply.Buckets, WebBucketInfo{
+				Name:         bucket.Name,
+				CreationDate: bucket.Created,
+			})
 		}
 	}
+	//}
 
 	reply.UIVersion = Version
 	return nil
@@ -446,52 +452,53 @@ func (web *webAPIHandlers) ListObjects(r *http.Request, args *ListObjectsArgs, r
 
 	listObjects := objectAPI.ListObjects
 
-	if isRemoteCallRequired(ctx, args.BucketName, objectAPI) {
-		sr, err := globalDNSConfig.Get(args.BucketName)
-		if err != nil {
-			if err == dns.ErrNoEntriesFound {
-				return toJSONError(ctx, BucketNotFound{
-					Bucket: args.BucketName,
-				}, args.BucketName)
+	/*
+		if isRemoteCallRequired(ctx, args.BucketName, objectAPI) {
+			sr, err := globalDNSConfig.Get(args.BucketName)
+			if err != nil {
+				if err == dns.ErrNoEntriesFound {
+					return toJSONError(ctx, BucketNotFound{
+						Bucket: args.BucketName,
+					}, args.BucketName)
+				}
+				return toJSONError(ctx, err, args.BucketName)
 			}
-			return toJSONError(ctx, err, args.BucketName)
-		}
-		core, err := getRemoteInstanceClient(r, getHostFromSrv(sr))
-		if err != nil {
-			return toJSONError(ctx, err, args.BucketName)
-		}
-
-		nextMarker := ""
-		// Fetch all the objects
-		for {
-			// Let listObjects reply back the maximum from server implementation
-			result, err := core.ListObjects(args.BucketName, args.Prefix, nextMarker, SlashSeparator, 1000)
+			core, err := getRemoteInstanceClient(r, getHostFromSrv(sr))
 			if err != nil {
 				return toJSONError(ctx, err, args.BucketName)
 			}
 
-			for _, obj := range result.Contents {
-				reply.Objects = append(reply.Objects, WebObjectInfo{
-					Key:          obj.Key,
-					LastModified: obj.LastModified,
-					Size:         obj.Size,
-					ContentType:  obj.ContentType,
-				})
-			}
-			for _, p := range result.CommonPrefixes {
-				reply.Objects = append(reply.Objects, WebObjectInfo{
-					Key: p.Prefix,
-				})
-			}
+			nextMarker := ""
+			// Fetch all the objects
+			for {
+				// Let listObjects reply back the maximum from server implementation
+				result, err := core.ListObjects(args.BucketName, args.Prefix, nextMarker, SlashSeparator, 1000)
+				if err != nil {
+					return toJSONError(ctx, err, args.BucketName)
+				}
 
-			nextMarker = result.NextMarker
+				for _, obj := range result.Contents {
+					reply.Objects = append(reply.Objects, WebObjectInfo{
+						Key:          obj.Key,
+						LastModified: obj.LastModified,
+						Size:         obj.Size,
+						ContentType:  obj.ContentType,
+					})
+				}
+				for _, p := range result.CommonPrefixes {
+					reply.Objects = append(reply.Objects, WebObjectInfo{
+						Key: p.Prefix,
+					})
+				}
 
-			// Return when there are no more objects
-			if !result.IsTruncated {
-				return nil
+				nextMarker = result.NextMarker
+
+				// Return when there are no more objects
+				if !result.IsTruncated {
+					return nil
+				}
 			}
-		}
-	}
+		}*/
 
 	claims, owner, authErr := webRequestAuthenticate(r)
 	if authErr != nil {
@@ -618,14 +625,14 @@ func (web *webAPIHandlers) ListObjects(r *http.Request, args *ListObjectsArgs, r
 
 // RemoveObjectArgs - args to remove an object, JSON will look like.
 //
-// {
-//     "bucketname": "testbucket",
-//     "objects": [
-//         "photos/hawaii/",
-//         "photos/maldives/",
-//         "photos/sanjose.jpg"
-//     ]
-// }
+//	{
+//	    "bucketname": "testbucket",
+//	    "objects": [
+//	        "photos/hawaii/",
+//	        "photos/maldives/",
+//	        "photos/sanjose.jpg"
+//	    ]
+//	}
 type RemoveObjectArgs struct {
 	Objects    []string `json:"objects"`    // Contains objects, prefixes.
 	BucketName string   `json:"bucketname"` // Contains bucket name.
@@ -678,40 +685,41 @@ func (web *webAPIHandlers) RemoveObject(r *http.Request, args *RemoveObjectArgs,
 	}
 
 	reply.UIVersion = Version
-	if isRemoteCallRequired(ctx, args.BucketName, objectAPI) {
-		sr, err := globalDNSConfig.Get(args.BucketName)
-		if err != nil {
-			if err == dns.ErrNoEntriesFound {
-				return toJSONError(ctx, BucketNotFound{
-					Bucket: args.BucketName,
-				}, args.BucketName)
+	/*
+		if isRemoteCallRequired(ctx, args.BucketName, objectAPI) {
+			sr, err := globalDNSConfig.Get(args.BucketName)
+			if err != nil {
+				if err == dns.ErrNoEntriesFound {
+					return toJSONError(ctx, BucketNotFound{
+						Bucket: args.BucketName,
+					}, args.BucketName)
+				}
+				return toJSONError(ctx, err, args.BucketName)
 			}
-			return toJSONError(ctx, err, args.BucketName)
-		}
-		core, err := getRemoteInstanceClient(r, getHostFromSrv(sr))
-		if err != nil {
-			return toJSONError(ctx, err, args.BucketName)
-		}
-		objectsCh := make(chan miniogo.ObjectInfo)
+			core, err := getRemoteInstanceClient(r, getHostFromSrv(sr))
+			if err != nil {
+				return toJSONError(ctx, err, args.BucketName)
+			}
+			objectsCh := make(chan miniogo.ObjectInfo)
 
-		// Send object names that are needed to be removed to objectsCh
-		go func() {
-			defer close(objectsCh)
+			// Send object names that are needed to be removed to objectsCh
+			go func() {
+				defer close(objectsCh)
 
-			for _, objectName := range args.Objects {
-				objectsCh <- miniogo.ObjectInfo{
-					Key: objectName,
+				for _, objectName := range args.Objects {
+					objectsCh <- miniogo.ObjectInfo{
+						Key: objectName,
+					}
+				}
+			}()
+
+			for resp := range core.RemoveObjects(ctx, args.BucketName, objectsCh, minio.RemoveObjectsOptions{}) {
+				if resp.Err != nil {
+					return toJSONError(ctx, resp.Err, args.BucketName, resp.ObjectName)
 				}
 			}
-		}()
-
-		for resp := range core.RemoveObjects(ctx, args.BucketName, objectsCh, minio.RemoveObjectsOptions{}) {
-			if resp.Err != nil {
-				return toJSONError(ctx, resp.Err, args.BucketName, resp.ObjectName)
-			}
-		}
-		return nil
-	}
+			return nil
+		}*/
 
 	opts := ObjectOptions{
 		Versioned:        globalBucketVersioningSys.Enabled(args.BucketName),
@@ -1814,47 +1822,48 @@ func (web *webAPIHandlers) GetBucketPolicy(r *http.Request, args *GetBucketPolic
 	}
 
 	var policyInfo = &miniogopolicy.BucketAccessPolicy{Version: "2012-10-17"}
-	if isRemoteCallRequired(ctx, args.BucketName, objectAPI) {
-		sr, err := globalDNSConfig.Get(args.BucketName)
-		if err != nil {
-			if err == dns.ErrNoEntriesFound {
-				return toJSONError(ctx, BucketNotFound{
-					Bucket: args.BucketName,
-				}, args.BucketName)
-			}
-			return toJSONError(ctx, err, args.BucketName)
-		}
-		client, rerr := getRemoteInstanceClient(r, getHostFromSrv(sr))
-		if rerr != nil {
-			return toJSONError(ctx, rerr, args.BucketName)
-		}
-		policyStr, err := client.GetBucketPolicy(ctx, args.BucketName)
-		if err != nil {
-			return toJSONError(ctx, rerr, args.BucketName)
-		}
-		bucketPolicy, err := policy.ParseConfig(strings.NewReader(policyStr), args.BucketName)
-		if err != nil {
-			return toJSONError(ctx, rerr, args.BucketName)
-		}
-		policyInfo, err = PolicyToBucketAccessPolicy(bucketPolicy)
-		if err != nil {
-			// This should not happen.
-			return toJSONError(ctx, err, args.BucketName)
-		}
-	} else {
-		bucketPolicy, err := globalPolicySys.Get(args.BucketName)
-		if err != nil {
-			if _, ok := err.(BucketPolicyNotFound); !ok {
+	/*
+		if isRemoteCallRequired(ctx, args.BucketName, objectAPI) {
+			sr, err := globalDNSConfig.Get(args.BucketName)
+			if err != nil {
+				if err == dns.ErrNoEntriesFound {
+					return toJSONError(ctx, BucketNotFound{
+						Bucket: args.BucketName,
+					}, args.BucketName)
+				}
 				return toJSONError(ctx, err, args.BucketName)
 			}
-		}
-
-		policyInfo, err = PolicyToBucketAccessPolicy(bucketPolicy)
-		if err != nil {
-			// This should not happen.
+			client, rerr := getRemoteInstanceClient(r, getHostFromSrv(sr))
+			if rerr != nil {
+				return toJSONError(ctx, rerr, args.BucketName)
+			}
+			policyStr, err := client.GetBucketPolicy(ctx, args.BucketName)
+			if err != nil {
+				return toJSONError(ctx, rerr, args.BucketName)
+			}
+			bucketPolicy, err := policy.ParseConfig(strings.NewReader(policyStr), args.BucketName)
+			if err != nil {
+				return toJSONError(ctx, rerr, args.BucketName)
+			}
+			policyInfo, err = PolicyToBucketAccessPolicy(bucketPolicy)
+			if err != nil {
+				// This should not happen.
+				return toJSONError(ctx, err, args.BucketName)
+			}
+		} else {*/
+	bucketPolicy, err := globalPolicySys.Get(args.BucketName)
+	if err != nil {
+		if _, ok := err.(BucketPolicyNotFound); !ok {
 			return toJSONError(ctx, err, args.BucketName)
 		}
 	}
+
+	policyInfo, err = PolicyToBucketAccessPolicy(bucketPolicy)
+	if err != nil {
+		// This should not happen.
+		return toJSONError(ctx, err, args.BucketName)
+	}
+	//}
 
 	reply.UIVersion = Version
 	reply.Policy = miniogopolicy.GetPolicy(policyInfo.Statements, args.BucketName, args.Prefix)
@@ -1911,42 +1920,43 @@ func (web *webAPIHandlers) ListAllBucketPolicies(r *http.Request, args *ListAllB
 	}
 
 	var policyInfo = new(miniogopolicy.BucketAccessPolicy)
-	if isRemoteCallRequired(ctx, args.BucketName, objectAPI) {
-		sr, err := globalDNSConfig.Get(args.BucketName)
-		if err != nil {
-			if err == dns.ErrNoEntriesFound {
-				return toJSONError(ctx, BucketNotFound{
-					Bucket: args.BucketName,
-				}, args.BucketName)
-			}
-			return toJSONError(ctx, err, args.BucketName)
-		}
-		core, rerr := getRemoteInstanceClient(r, getHostFromSrv(sr))
-		if rerr != nil {
-			return toJSONError(ctx, rerr, args.BucketName)
-		}
-		var policyStr string
-		policyStr, err = core.Client.GetBucketPolicy(ctx, args.BucketName)
-		if err != nil {
-			return toJSONError(ctx, err, args.BucketName)
-		}
-		if policyStr != "" {
-			if err = json.Unmarshal([]byte(policyStr), policyInfo); err != nil {
+	/*
+		if isRemoteCallRequired(ctx, args.BucketName, objectAPI) {
+			sr, err := globalDNSConfig.Get(args.BucketName)
+			if err != nil {
+				if err == dns.ErrNoEntriesFound {
+					return toJSONError(ctx, BucketNotFound{
+						Bucket: args.BucketName,
+					}, args.BucketName)
+				}
 				return toJSONError(ctx, err, args.BucketName)
 			}
-		}
-	} else {
-		bucketPolicy, err := globalPolicySys.Get(args.BucketName)
-		if err != nil {
-			if _, ok := err.(BucketPolicyNotFound); !ok {
+			core, rerr := getRemoteInstanceClient(r, getHostFromSrv(sr))
+			if rerr != nil {
+				return toJSONError(ctx, rerr, args.BucketName)
+			}
+			var policyStr string
+			policyStr, err = core.Client.GetBucketPolicy(ctx, args.BucketName)
+			if err != nil {
 				return toJSONError(ctx, err, args.BucketName)
 			}
-		}
-		policyInfo, err = PolicyToBucketAccessPolicy(bucketPolicy)
-		if err != nil {
+			if policyStr != "" {
+				if err = json.Unmarshal([]byte(policyStr), policyInfo); err != nil {
+					return toJSONError(ctx, err, args.BucketName)
+				}
+			}
+		} else {*/
+	bucketPolicy, err := globalPolicySys.Get(args.BucketName)
+	if err != nil {
+		if _, ok := err.(BucketPolicyNotFound); !ok {
 			return toJSONError(ctx, err, args.BucketName)
 		}
 	}
+	policyInfo, err = PolicyToBucketAccessPolicy(bucketPolicy)
+	if err != nil {
+		return toJSONError(ctx, err, args.BucketName)
+	}
+	//}
 
 	reply.UIVersion = Version
 	for prefix, policy := range miniogopolicy.GetPolicies(policyInfo.Statements, args.BucketName, "") {
@@ -2008,78 +2018,79 @@ func (web *webAPIHandlers) SetBucketPolicy(r *http.Request, args *SetBucketPolic
 		}
 	}
 
-	if isRemoteCallRequired(ctx, args.BucketName, objectAPI) {
-		sr, err := globalDNSConfig.Get(args.BucketName)
-		if err != nil {
-			if err == dns.ErrNoEntriesFound {
-				return toJSONError(ctx, BucketNotFound{
-					Bucket: args.BucketName,
-				}, args.BucketName)
-			}
-			return toJSONError(ctx, err, args.BucketName)
-		}
-		core, rerr := getRemoteInstanceClient(r, getHostFromSrv(sr))
-		if rerr != nil {
-			return toJSONError(ctx, rerr, args.BucketName)
-		}
-		var policyStr string
-		// Use the abstracted API instead of core, such that
-		// NoSuchBucketPolicy errors are automatically handled.
-		policyStr, err = core.Client.GetBucketPolicy(ctx, args.BucketName)
-		if err != nil {
-			return toJSONError(ctx, err, args.BucketName)
-		}
-		var policyInfo = &miniogopolicy.BucketAccessPolicy{Version: "2012-10-17"}
-		if policyStr != "" {
-			if err = json.Unmarshal([]byte(policyStr), policyInfo); err != nil {
+	/*
+		if isRemoteCallRequired(ctx, args.BucketName, objectAPI) {
+			sr, err := globalDNSConfig.Get(args.BucketName)
+			if err != nil {
+				if err == dns.ErrNoEntriesFound {
+					return toJSONError(ctx, BucketNotFound{
+						Bucket: args.BucketName,
+					}, args.BucketName)
+				}
 				return toJSONError(ctx, err, args.BucketName)
 			}
-		}
-
-		policyInfo.Statements = miniogopolicy.SetPolicy(policyInfo.Statements, policyType, args.BucketName, args.Prefix)
-		if len(policyInfo.Statements) == 0 {
-			if err = core.SetBucketPolicy(ctx, args.BucketName, ""); err != nil {
+			core, rerr := getRemoteInstanceClient(r, getHostFromSrv(sr))
+			if rerr != nil {
+				return toJSONError(ctx, rerr, args.BucketName)
+			}
+			var policyStr string
+			// Use the abstracted API instead of core, such that
+			// NoSuchBucketPolicy errors are automatically handled.
+			policyStr, err = core.Client.GetBucketPolicy(ctx, args.BucketName)
+			if err != nil {
 				return toJSONError(ctx, err, args.BucketName)
 			}
-			return nil
-		}
-
-		bucketPolicy, err := BucketAccessPolicyToPolicy(policyInfo)
-		if err != nil {
-			// This should not happen.
-			return toJSONError(ctx, err, args.BucketName)
-		}
-
-		policyData, err := json.Marshal(bucketPolicy)
-		if err != nil {
-			return toJSONError(ctx, err, args.BucketName)
-		}
-
-		if err = core.SetBucketPolicy(ctx, args.BucketName, string(policyData)); err != nil {
-			return toJSONError(ctx, err, args.BucketName)
-		}
-
-	} else {
-		bucketPolicy, err := globalPolicySys.Get(args.BucketName)
-		if err != nil {
-			if _, ok := err.(BucketPolicyNotFound); !ok {
-				return toJSONError(ctx, err, args.BucketName)
+			var policyInfo = &miniogopolicy.BucketAccessPolicy{Version: "2012-10-17"}
+			if policyStr != "" {
+				if err = json.Unmarshal([]byte(policyStr), policyInfo); err != nil {
+					return toJSONError(ctx, err, args.BucketName)
+				}
 			}
-		}
-		policyInfo, err := PolicyToBucketAccessPolicy(bucketPolicy)
-		if err != nil {
-			// This should not happen.
-			return toJSONError(ctx, err, args.BucketName)
-		}
 
-		policyInfo.Statements = miniogopolicy.SetPolicy(policyInfo.Statements, policyType, args.BucketName, args.Prefix)
-		if len(policyInfo.Statements) == 0 {
-			if err = globalBucketMetadataSys.Update(args.BucketName, bucketPolicyConfig, nil); err != nil {
+			policyInfo.Statements = miniogopolicy.SetPolicy(policyInfo.Statements, policyType, args.BucketName, args.Prefix)
+			if len(policyInfo.Statements) == 0 {
+				if err = core.SetBucketPolicy(ctx, args.BucketName, ""); err != nil {
+					return toJSONError(ctx, err, args.BucketName)
+				}
+				return nil
+			}
+
+			bucketPolicy, err := BucketAccessPolicyToPolicy(policyInfo)
+			if err != nil {
+				// This should not happen.
 				return toJSONError(ctx, err, args.BucketName)
 			}
 
-			return nil
+			policyData, err := json.Marshal(bucketPolicy)
+			if err != nil {
+				return toJSONError(ctx, err, args.BucketName)
+			}
+
+			if err = core.SetBucketPolicy(ctx, args.BucketName, string(policyData)); err != nil {
+				return toJSONError(ctx, err, args.BucketName)
+			}
+
+		} else {*/
+	bucketPolicy, err := globalPolicySys.Get(args.BucketName)
+	if err != nil {
+		if _, ok := err.(BucketPolicyNotFound); !ok {
+			return toJSONError(ctx, err, args.BucketName)
 		}
+	}
+	policyInfo, err := PolicyToBucketAccessPolicy(bucketPolicy)
+	if err != nil {
+		// This should not happen.
+		return toJSONError(ctx, err, args.BucketName)
+	}
+
+	policyInfo.Statements = miniogopolicy.SetPolicy(policyInfo.Statements, policyType, args.BucketName, args.Prefix)
+	if len(policyInfo.Statements) == 0 {
+		if err = globalBucketMetadataSys.Update(args.BucketName, bucketPolicyConfig, nil); err != nil {
+			return toJSONError(ctx, err, args.BucketName)
+		}
+
+		return nil
+		//}
 
 		bucketPolicy, err = BucketAccessPolicyToPolicy(policyInfo)
 		if err != nil {

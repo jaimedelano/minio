@@ -386,10 +386,12 @@ func initAllSubsystems(ctx context.Context, newObject ObjectLayer) (err error) {
 	}
 
 	// Populate existing buckets to the etcd backend
-	if globalDNSConfig != nil {
-		// Background this operation.
-		go initFederatorBackend(buckets, newObject)
-	}
+	/*
+		if globalDNSConfig != nil {
+			// Background this operation.
+			go initFederatorBackend(buckets, newObject)
+		}
+	*/
 
 	// Initialize bucket metadata sub-system.
 	globalBucketMetadataSys.Init(ctx, buckets, newObject)

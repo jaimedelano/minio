@@ -343,13 +343,15 @@ func StartGateway(ctx *cli.Context, gw Gateway) {
 	}
 
 	// Populate existing buckets to the etcd backend
-	if globalDNSConfig != nil {
-		buckets, err := newObject.ListBuckets(GlobalContext)
-		if err != nil {
-			logger.Fatal(err, "Unable to list buckets")
+	/*
+		if globalDNSConfig != nil {
+			buckets, err := newObject.ListBuckets(GlobalContext)
+			if err != nil {
+				logger.Fatal(err, "Unable to list buckets")
+			}
+			initFederatorBackend(buckets, newObject)
 		}
-		initFederatorBackend(buckets, newObject)
-	}
+	*/
 
 	// Verify if object layer supports
 	// - encryption

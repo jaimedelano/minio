@@ -24,12 +24,10 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/Azure/azure-storage-blob-go/azblob"
 	"google.golang.org/api/googleapi"
 
 	minio "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/tags"
-	"github.com/minio/minio/cmd/config/dns"
 	"github.com/minio/minio/cmd/crypto"
 	"github.com/minio/minio/cmd/logger"
 	"github.com/minio/minio/pkg/auth"
@@ -1868,9 +1866,9 @@ func toAPIErrorCode(ctx context.Context, err error) (apiErr APIErrorCode) {
 
 	// etcd specific errors, a key is always a bucket for us return
 	// ErrNoSuchBucket in such a case.
-	if err == dns.ErrNoEntriesFound {
-		return ErrNoSuchBucket
-	}
+	//if err == dns.ErrNoEntriesFound {
+	//	return ErrNoSuchBucket
+	//}
 
 	switch err.(type) {
 	case StorageFull:
@@ -2012,10 +2010,10 @@ func toAPIErrorCode(ctx context.Context, err error) (apiErr APIErrorCode) {
 		apiErr = ErrBackendDown
 	case ObjectNameTooLong:
 		apiErr = ErrKeyTooLongError
-	case dns.ErrInvalidBucketName:
-		apiErr = ErrInvalidBucketName
-	case dns.ErrBucketConflict:
-		apiErr = ErrBucketAlreadyExists
+	//case dns.ErrInvalidBucketName:
+	//	apiErr = ErrInvalidBucketName
+	//case dns.ErrBucketConflict:
+	//	apiErr = ErrBucketAlreadyExists
 	default:
 		var ie, iw int
 		// This work-around is to handle the issue golang/go#30648
@@ -2052,12 +2050,12 @@ func toAPIError(ctx context.Context, err error) APIError {
 	}
 
 	var apiErr = errorCodes.ToAPIErr(toAPIErrorCode(ctx, err))
-	e, ok := err.(dns.ErrInvalidBucketName)
-	if ok {
-		code := toAPIErrorCode(ctx, e)
-		apiErr = errorCodes.ToAPIErrWithErr(code, e)
-	}
-
+	/*	e, ok := err.(dns.ErrInvalidBucketName)
+		if ok {
+			code := toAPIErrorCode(ctx, e)
+			apiErr = errorCodes.ToAPIErrWithErr(code, e)
+		}
+	*/
 	if apiErr.Code == "NotImplemented" {
 		switch e := err.(type) {
 		case NotImplemented:
@@ -2161,12 +2159,15 @@ func toAPIError(ctx context.Context, err error) APIError {
 				apiErr.Code = e.Errors[0].Reason
 
 			}
-		case azblob.StorageError:
-			apiErr = APIError{
-				Code:           string(e.ServiceCode()),
-				Description:    e.Error(),
-				HTTPStatusCode: e.Response().StatusCode,
-			}
+			/*
+				case azblob.StorageError:
+					apiErr = APIError{
+						Code:           string(e.ServiceCode()),
+						Description:    e.Error(),
+						HTTPStatusCode: e.Response().StatusCode,
+					}
+
+			*/
 			// Add more Gateway SDKs here if any in future.
 		default:
 			apiErr = APIError{

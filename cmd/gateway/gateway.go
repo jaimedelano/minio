@@ -23,7 +23,7 @@ import (
 	_ "github.com/minio/minio/cmd/gateway/nas"
 
 	// Azure
-	_ "github.com/minio/minio/cmd/gateway/azure"
+	//_ "github.com/minio/minio/cmd/gateway/azure"
 
 	// S3
 	_ "github.com/minio/minio/cmd/gateway/s3"

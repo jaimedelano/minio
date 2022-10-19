@@ -32,7 +32,6 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/minio/minio/cmd/config/cache"
 	"github.com/minio/minio/cmd/config/compress"
-	"github.com/minio/minio/cmd/config/dns"
 	xldap "github.com/minio/minio/cmd/config/identity/ldap"
 	"github.com/minio/minio/cmd/config/identity/openid"
 	"github.com/minio/minio/cmd/config/policy/opa"
@@ -243,7 +242,7 @@ var (
 	globalBucketFederation bool
 
 	// Allocated DNS config wrapper over etcd client.
-	globalDNSConfig dns.Store
+	globalDNSConfig interface{}
 
 	// GlobalKMS initialized KMS configuration
 	GlobalKMS kms.KMS
