@@ -18,18 +18,10 @@ package target
 
 import (
 	"context"
-	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
-	"errors"
-	"net/url"
-	"os"
-	"path/filepath"
-
 	"github.com/minio/minio/pkg/event"
 	xnet "github.com/minio/minio/pkg/net"
-	"github.com/nats-io/nats.go"
-	"github.com/nats-io/stan.go"
+	"os"
 )
 
 // NATS related constants
@@ -109,38 +101,42 @@ func (n NATSArgs) Validate() error {
 		return nil
 	}
 
-	if n.Address.IsEmpty() {
-		return errors.New("empty address")
-	}
-
-	if n.Subject == "" {
-		return errors.New("empty subject")
-	}
-
-	if n.ClientCert != "" && n.ClientKey == "" || n.ClientCert == "" && n.ClientKey != "" {
-		return errors.New("cert and key must be specified as a pair")
-	}
-
-	if n.Username != "" && n.Password == "" || n.Username == "" && n.Password != "" {
-		return errors.New("username and password must be specified as a pair")
-	}
-
-	if n.Streaming.Enable {
-		if n.Streaming.ClusterID == "" {
-			return errors.New("empty cluster id")
+	/*
+		if n.Address.IsEmpty() {
+			return errors.New("empty address")
 		}
-	}
 
-	if n.QueueDir != "" {
-		if !filepath.IsAbs(n.QueueDir) {
-			return errors.New("queueDir path should be absolute")
+		if n.Subject == "" {
+			return errors.New("empty subject")
 		}
-	}
+
+		if n.ClientCert != "" && n.ClientKey == "" || n.ClientCert == "" && n.ClientKey != "" {
+			return errors.New("cert and key must be specified as a pair")
+		}
+
+		if n.Username != "" && n.Password == "" || n.Username == "" && n.Password != "" {
+			return errors.New("username and password must be specified as a pair")
+		}
+
+		if n.Streaming.Enable {
+			if n.Streaming.ClusterID == "" {
+				return errors.New("empty cluster id")
+			}
+		}
+
+		if n.QueueDir != "" {
+			if !filepath.IsAbs(n.QueueDir) {
+				return errors.New("queueDir path should be absolute")
+			}
+		}
+
+	*/
 
 	return nil
 }
 
 // To obtain a nats connection from args.
+/*
 func (n NATSArgs) connectNats() (*nats.Conn, error) {
 	connOpts := []nats.Option{nats.Name("Minio Notification")}
 	if n.Username != "" && n.Password != "" {
@@ -162,8 +158,10 @@ func (n NATSArgs) connectNats() (*nats.Conn, error) {
 	}
 	return nats.Connect(n.Address.String(), connOpts...)
 }
+*/
 
 // To obtain a streaming connection from args.
+/*
 func (n NATSArgs) connectStan() (stan.Conn, error) {
 	scheme := "nats"
 	if n.Secure {
@@ -192,12 +190,14 @@ func (n NATSArgs) connectStan() (stan.Conn, error) {
 	return stan.Connect(n.Streaming.ClusterID, clientID, connOpts...)
 }
 
+*/
+
 // NATSTarget - NATS target.
 type NATSTarget struct {
 	id         event.TargetID
 	args       NATSArgs
-	natsConn   *nats.Conn
-	stanConn   stan.Conn
+	natsConn   interface{} //*nats.Conn
+	stanConn   interface{} // stan.Conn
 	store      Store
 	loggerOnce func(ctx context.Context, err error, id interface{}, errKind ...interface{})
 }
@@ -214,33 +214,37 @@ func (target *NATSTarget) HasQueueStore() bool {
 
 // IsActive - Return true if target is up and active
 func (target *NATSTarget) IsActive() (bool, error) {
-	var connErr error
-	if target.args.Streaming.Enable {
-		if target.stanConn == nil || target.stanConn.NatsConn() == nil {
-			target.stanConn, connErr = target.args.connectStan()
+	return false, nil
+	/*
+		var connErr error
+		if target.args.Streaming.Enable {
+			if target.stanConn == nil || target.stanConn.NatsConn() == nil {
+				target.stanConn, connErr = target.args.connectStan()
+			} else {
+				if !target.stanConn.NatsConn().IsConnected() {
+					return false, errNotConnected
+				}
+			}
 		} else {
-			if !target.stanConn.NatsConn().IsConnected() {
-				return false, errNotConnected
+			if target.natsConn == nil {
+				target.natsConn, connErr = target.args.connectNats()
+			} else {
+				if !target.natsConn.IsConnected() {
+					return false, errNotConnected
+				}
 			}
 		}
-	} else {
-		if target.natsConn == nil {
-			target.natsConn, connErr = target.args.connectNats()
-		} else {
-			if !target.natsConn.IsConnected() {
+
+		if connErr != nil {
+			if connErr.Error() == nats.ErrNoServers.Error() {
 				return false, errNotConnected
 			}
+			return false, connErr
 		}
-	}
 
-	if connErr != nil {
-		if connErr.Error() == nats.ErrNoServers.Error() {
-			return false, errNotConnected
-		}
-		return false, connErr
-	}
+		return true, nil
 
-	return true, nil
+	*/
 }
 
 // Save - saves the events to the store which will be replayed when the Nats connection is active.
@@ -257,27 +261,31 @@ func (target *NATSTarget) Save(eventData event.Event) error {
 
 // send - sends an event to the Nats.
 func (target *NATSTarget) send(eventData event.Event) error {
-	objectName, err := url.QueryUnescape(eventData.S3.Object.Key)
-	if err != nil {
-		return err
-	}
-	key := eventData.S3.Bucket.Name + "/" + objectName
-
-	data, err := json.Marshal(event.Log{EventName: eventData.EventName, Key: key, Records: []event.Event{eventData}})
-	if err != nil {
-		return err
-	}
-
-	if target.stanConn != nil {
-		if target.args.Streaming.Async {
-			_, err = target.stanConn.PublishAsync(target.args.Subject, data, nil)
-		} else {
-			err = target.stanConn.Publish(target.args.Subject, data)
+	return nil
+	/*
+		objectName, err := url.QueryUnescape(eventData.S3.Object.Key)
+		if err != nil {
+			return err
 		}
-	} else {
-		err = target.natsConn.Publish(target.args.Subject, data)
-	}
-	return err
+		key := eventData.S3.Bucket.Name + "/" + objectName
+
+		data, err := json.Marshal(event.Log{EventName: eventData.EventName, Key: key, Records: []event.Event{eventData}})
+		if err != nil {
+			return err
+		}
+
+		if target.stanConn != nil {
+			if target.args.Streaming.Async {
+				_, err = target.stanConn.PublishAsync(target.args.Subject, data, nil)
+			} else {
+				err = target.stanConn.Publish(target.args.Subject, data)
+			}
+		} else {
+			err = target.natsConn.Publish(target.args.Subject, data)
+		}
+		return err
+
+	*/
 }
 
 // Send - sends event to Nats.
@@ -306,22 +314,27 @@ func (target *NATSTarget) Send(eventKey string) error {
 
 // Close - closes underneath connections to NATS server.
 func (target *NATSTarget) Close() (err error) {
-	if target.stanConn != nil {
-		// closing the streaming connection does not close the provided NATS connection.
-		if target.stanConn.NatsConn() != nil {
-			target.stanConn.NatsConn().Close()
+	return nil
+	/*
+		if target.stanConn != nil {
+			// closing the streaming connection does not close the provided NATS connection.
+			if target.stanConn.NatsConn() != nil {
+				target.stanConn.NatsConn().Close()
+			}
+			err = target.stanConn.Close()
 		}
-		err = target.stanConn.Close()
-	}
 
-	if target.natsConn != nil {
-		target.natsConn.Close()
-	}
+		if target.natsConn != nil {
+			target.natsConn.Close()
+		}
 
-	return err
+		return err
+
+	*/
 }
 
 // NewNATSTarget - creates new NATS target.
+/*
 func NewNATSTarget(id string, args NATSArgs, doneCh <-chan struct{}, loggerOnce func(ctx context.Context, err error, id interface{}, kind ...interface{}), test bool) (*NATSTarget, error) {
 	var natsConn *nats.Conn
 	var stanConn stan.Conn
@@ -370,3 +383,4 @@ func NewNATSTarget(id string, args NATSArgs, doneCh <-chan struct{}, loggerOnce 
 
 	return target, nil
 }
+*/
