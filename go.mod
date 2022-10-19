@@ -69,7 +69,8 @@ require (
 	github.com/shirou/gopsutil/v3 v3.21.1
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/streadway/amqp v1.0.0
-	github.com/tidwall/gjson v1.6.8
+	github.com/tidwall/gjson v1.14.3
+	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.0.4
 	github.com/tinylib/msgp v1.1.3
 	github.com/valyala/tcplisten v0.0.0-20161114210144-ceec8f93295a
