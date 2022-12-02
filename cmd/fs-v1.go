@@ -1342,7 +1342,7 @@ func (fs *FSObjects) listDirFactory() ListDirFunc {
 	// listDir - lists all the entries at a given prefix and given entry in the prefix.
 	listDir := func(bucket, prefixDir, prefixEntry string) (emptyDir bool, entries []string, delayIsLeaf bool) {
 		var err error
-		entries, err = readDir(pathJoin(fs.fsPath, bucket, prefixDir))
+		entries, err = readDirWithOpts(pathJoin(fs.fsPath, bucket, prefixDir), readDirOpts{count: -1, followDirSymlink: true})
 		if err != nil && err != errFileNotFound {
 			logger.LogIf(GlobalContext, err)
 			return false, nil, false
