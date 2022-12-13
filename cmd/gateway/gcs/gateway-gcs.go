@@ -1166,7 +1166,7 @@ func (l *gcsGateway) GetMultipartInfo(ctx context.Context, bucket, object, uploa
 	return result, nil
 }
 
-//  ListObjectParts returns all object parts for specified object in specified bucket
+// ListObjectParts returns all object parts for specified object in specified bucket
 func (l *gcsGateway) ListObjectParts(ctx context.Context, bucket string, key string, uploadID string, partNumberMarker int, maxParts int, opts minio.ObjectOptions) (minio.ListPartsInfo, error) {
 	it := l.client.Bucket(bucket).Objects(ctx, &storage.Query{
 		Prefix: path.Join(gcsMinioMultipartPathV1, uploadID),
@@ -1377,6 +1377,19 @@ func (l *gcsGateway) CompleteMultipartUpload(ctx context.Context, bucket string,
 	return fromGCSAttrsToObjectInfo(attrs), nil
 }
 
+// BucketAccessPolicy - Collection of canned bucket policy at a given prefix.
+type BucketAccessPolicy struct {
+	Bucket string                     `json:"bucket"`
+	Prefix string                     `json:"prefix"`
+	Policy miniogopolicy.BucketPolicy `json:"policy"`
+}
+
+// ListAllBucketPoliciesRep - get all bucket policy reply.
+type ListAllBucketPoliciesRep struct {
+	UIVersion string               `json:"uiVersion"`
+	Policies  []BucketAccessPolicy `json:"policies"`
+}
+
 // SetBucketPolicy - Set policy on bucket
 func (l *gcsGateway) SetBucketPolicy(ctx context.Context, bucket string, bucketPolicy *policy.Policy) error {
 	policyInfo, err := minio.PolicyToBucketAccessPolicy(bucketPolicy)
@@ -1385,9 +1398,9 @@ func (l *gcsGateway) SetBucketPolicy(ctx context.Context, bucket string, bucketP
 		return gcsToObjectError(err, bucket)
 	}
 
-	var policies []minio.BucketAccessPolicy
+	var policies []BucketAccessPolicy
 	for prefix, policy := range miniogopolicy.GetPolicies(policyInfo.Statements, bucket, "") {
-		policies = append(policies, minio.BucketAccessPolicy{
+		policies = append(policies, BucketAccessPolicy{
 			Prefix: prefix,
 			Policy: policy,
 		})
