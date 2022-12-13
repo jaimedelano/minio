@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	pathutil "path"
+	"strings"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
@@ -118,6 +119,8 @@ type fsMetaV1 struct {
 	Meta map[string]string `json:"meta,omitempty"`
 	// parts info for current object - used in encryption.
 	Parts []ObjectPartInfo `json:"parts,omitempty"`
+	// ModTime keeps track of the last known ModTime
+	ModTime time.Time `json:"modTime,omitempty"`
 }
 
 // IsValid - tells if the format is sane by validating the version
@@ -130,6 +133,28 @@ func (m fsMetaV1) IsValid() bool {
 // the version string.
 func isFSMetaValid(version string) bool {
 	return (version == fsMetaVersion || version == fsMetaVersion100 || version == fsMetaVersion101)
+}
+
+// needsEtagReset compares fi.ModTime and meta.ModTime if it is set
+func (m fsMetaV1) needsEtagReset(b, o string, fi os.FileInfo) bool {
+	if b == minioMetaBucket ||
+		strings.HasSuffix(o, dataUsageBloomName) ||
+		strings.HasSuffix(o, dataUsageObjName) ||
+		strings.HasSuffix(o, dataUsageCacheName) {
+		return false
+	}
+	if m.Meta == nil {
+		return false
+	}
+	if !m.ModTime.IsZero() && m.ModTime.Before(fi.ModTime()) {
+		// ModTime of file is older than the last one we are aware of : content must have
+		// been modified on the filesystem
+		if _, ok := m.Meta["etag"]; ok {
+			m.Meta["etag"] = GenETag()
+			return true
+		}
+	}
+	return false
 }
 
 // Converts metadata to object info.
@@ -249,5 +274,6 @@ func (m *fsMetaV1) ReadFrom(ctx context.Context, lk *lock.LockedFile) (n int64, 
 func newFSMetaV1() (fsMeta fsMetaV1) {
 	fsMeta = fsMetaV1{}
 	fsMeta.Version = fsMetaVersion
+	//	fsMeta.ModTime = time.Now()
 	return fsMeta
 }

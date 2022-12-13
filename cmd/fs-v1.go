@@ -669,13 +669,14 @@ func (fs *FSObjects) CopyObject(ctx context.Context, srcBucket, srcObject, dstBu
 
 		fsMeta.Meta = cloneMSS(srcInfo.UserDefined)
 		fsMeta.Meta["etag"] = srcInfo.ETag
-		if _, err = fsMeta.WriteTo(wlk); err != nil {
-			return oi, toObjectErr(err, srcBucket, srcObject)
-		}
-
 		// Stat the file to get file size.
 		fi, err := fsStatFile(ctx, pathJoin(fs.fsPath, srcBucket, srcObject))
 		if err != nil {
+			return oi, toObjectErr(err, srcBucket, srcObject)
+		}
+		fsMeta.ModTime = fi.ModTime()
+
+		if _, err = fsMeta.WriteTo(wlk); err != nil {
 			return oi, toObjectErr(err, srcBucket, srcObject)
 		}
 
@@ -881,6 +882,7 @@ func (fs *FSObjects) createFsJSON(object, fsMetaPath string) error {
 		"etag":         GenETag(),
 		"content-type": mimedb.TypeByExtension(path.Ext(object)),
 	}
+	fsMeta.ModTime = time.Now()
 	wlk, werr := fs.rwPool.Create(fsMetaPath)
 	if werr == nil {
 		_, err := fsMeta.WriteTo(wlk)
@@ -897,6 +899,7 @@ func (fs *FSObjects) defaultFsJSON(object string) fsMetaV1 {
 		"etag":         defaultEtag,
 		"content-type": mimedb.TypeByExtension(path.Ext(object)),
 	}
+	fsMeta.ModTime = time.Now()
 	return fsMeta
 }
 
@@ -947,6 +950,10 @@ func (fs *FSObjects) getObjectInfoNoFSLock(ctx context.Context, bucket, object s
 		return oi, err
 	}
 
+	if fsMeta.needsEtagReset(bucket, object, fi) {
+		//fmt.Println("Live-updated fsMeta during ReadNoFSLock " + object)
+	}
+
 	return fsMeta.ToObjectInfo(bucket, object, fi), nil
 }
 
@@ -995,6 +1002,18 @@ func (fs *FSObjects) getObjectInfo(ctx context.Context, bucket, object string) (
 	fi, err := fsStatFile(ctx, pathJoin(fs.fsPath, bucket, object))
 	if err != nil {
 		return oi, err
+	}
+
+	if fsMeta.needsEtagReset(bucket, object, fi) {
+		// Reopen and save fsMeta
+		if wlk, err := fs.rwPool.Write(fsMetaPath); err == nil {
+			fsMeta.ModTime = fi.ModTime()
+			defer wlk.Close()
+			_, werr := fsMeta.WriteTo(wlk)
+			if werr == nil {
+				//fmt.Println("updated fsMeta for " + object + "as it needed EtagReset")
+			}
+		}
 	}
 
 	return fsMeta.ToObjectInfo(bucket, object, fi), nil
@@ -1216,17 +1235,18 @@ func (fs *FSObjects) putObject(ctx context.Context, bucket string, object string
 		return ObjectInfo{}, toObjectErr(err, bucket, object)
 	}
 
+	fi, err := fsStatFile(ctx, pathJoin(fs.fsPath, bucket, object))
+	if err != nil {
+		return ObjectInfo{}, toObjectErr(err, bucket, object)
+	}
+
+	// Stat the file to fetch timestamp, size.
 	if bucket != minioMetaBucket {
+		fsMeta.ModTime = fi.ModTime()
 		// Write FS metadata after a successful namespace operation.
 		if _, err = fsMeta.WriteTo(wlk); err != nil {
 			return ObjectInfo{}, toObjectErr(err, bucket, object)
 		}
-	}
-
-	// Stat the file to fetch timestamp, size.
-	fi, err := fsStatFile(ctx, pathJoin(fs.fsPath, bucket, object))
-	if err != nil {
-		return ObjectInfo{}, toObjectErr(err, bucket, object)
 	}
 
 	// Success.
