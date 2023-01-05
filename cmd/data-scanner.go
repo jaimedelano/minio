@@ -58,7 +58,9 @@ var (
 	dataScannerLeaderLockTimeout = newDynamicTimeout(30*time.Second, 10*time.Second)
 	// Sleeper values are updated when config is loaded.
 	scannerSleeper = newDynamicSleeper(10, 10*time.Second)
-	scannerCycle   = &safeDuration{}
+	scannerCycle   = &safeDuration{
+		t: time.Minute, // Use a default, otherwise if scannerCycle.Update is never called, it will return a 0 time
+	}
 )
 
 // initDataScanner will start the scanner in the background.
