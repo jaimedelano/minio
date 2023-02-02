@@ -19,6 +19,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"io"
 	"path"
 )
 
@@ -143,7 +144,9 @@ func renameAll(srcFilePath, dstFilePath string) (err error) {
 			// directory" error message. Handle this specifically here.
 			return errFileAccessDenied
 		case isSysErrCrossDevice(err):
-			return fmt.Errorf("%w (%s)->(%s)", errCrossDeviceLink, srcFilePath, dstFilePath)
+			if err = MoveFile(srcFilePath, dstFilePath); err != nil {
+				return fmt.Errorf("%w (%s)->(%s)", errCrossDeviceLink, srcFilePath, dstFilePath)
+			}
 		case osIsNotExist(err):
 			return errFileNotFound
 		case osIsExist(err):
@@ -155,6 +158,30 @@ func renameAll(srcFilePath, dstFilePath string) (err error) {
 		}
 	}
 	return nil
+}
+
+func MoveFile(sourcePath, destPath string) error {
+    inputFile, err := os.Open(sourcePath)
+    if err != nil {
+        return fmt.Errorf("Couldn't open source file: %s", err)
+    }
+    outputFile, err := os.Create(destPath)
+    if err != nil {
+        inputFile.Close()
+        return fmt.Errorf("Couldn't open dest file: %s", err)
+    }
+    defer outputFile.Close()
+    _, err = io.Copy(outputFile, inputFile)
+    inputFile.Close()
+    if err != nil {
+        return fmt.Errorf("Writing to output file failed: %s", err)
+    }
+    // The copy was successful, so now delete the original file
+    err = os.Remove(sourcePath)
+    if err != nil {
+        return fmt.Errorf("Failed removing original file: %s", err)
+    }
+    return nil
 }
 
 // Reliably retries os.RenameAll if for some reason os.RenameAll returns
